@@ -3,21 +3,13 @@
 
 #include <string>
 #include "llhttp.h"
-#include "http_request.h"
+#include "http_request.hpp"
 
 class HttpRequestParser {
 public:
     HttpRequestParser();
 
     size_t parse(const char* data, size_t len);
-
-    std::string method() const;
-    std::string path() const;
-    int version_major() const;
-    int version_minor() const;
-    std::string user_agent() const;
-    std::string cookie() const;
-
     HttpRequest getRequest() const;
 
 private:

@@ -1,10 +1,21 @@
 #include "server.hpp"
+#include "server_runners/poll_server.hpp"
 
-Server::Server(Config config) {
-    this->port = config.port;
-    this->router = config.router;
+Server::Server(Config config)
+{
+    port_ = config.port;
+
+    if (config.server_runner_type == ServerRunnerTypes::POLL)
+    {
+        server_runner_ = std::make_unique<ServerRunner>(new PollServer(std::to_string(port_), config.router));
+    }
 }
 
-void Server::start() {
-    
+void Server::start()
+{
+    server_runner_->run();
+}
+
+void Server::stop() {
+    server_runner_->stop();
 }
