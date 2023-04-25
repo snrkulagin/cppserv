@@ -3,6 +3,7 @@
 
 #include <string>
 #include <poll.h>
+#include <vector>
 #include "http_request.hpp"
 #include "server_runner.hpp"
 #include "router.hpp"
@@ -31,9 +32,7 @@ private:
     HttpRequestParser parser_;
     const std::string port_;
     int listener_;
-    pollfd *pfds_;
-    int fd_count_;
-    int fd_size_;
+    std::vector<pollfd> pfds_;
 };
 
 #endif  // POLL_SERVER_H

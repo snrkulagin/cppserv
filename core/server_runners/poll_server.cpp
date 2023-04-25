@@ -69,23 +69,25 @@ PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) 
     }
 
     // Add the listener to set
-    pfds_ = new pollfd[INITIAL_PFD_SIZE];
-    pfds_[0].fd = listener_;
-    pfds_[0].events = POLLIN;
-    fd_count_ = 1;
-    fd_size_ = INITIAL_PFD_SIZE;
+    pfds_.reserve(INITIAL_PFD_SIZE);
+
+    pollfd pfd;
+    pfd.fd = listener_;
+    pfd.events = POLLIN;
+
+    pfds_.push_back(pfd);
 }
 
 PollServer::~PollServer()
 {
-    delete[] pfds_;
+    pfds_.clear();
 }
 
 void PollServer::run()
 {
     while (!stop_)
     {
-        int poll_count = poll(pfds_, fd_count_, -1);
+        int poll_count = poll(pfds_.data(), pfds_.size(), -1);
 
         if (poll_count == -1)
         {
@@ -94,7 +96,7 @@ void PollServer::run()
         }
 
         // Run through the existing connections looking for data to read
-        for (int i = 0; i < fd_count_; i++)
+        for (int i = 0; i < pfds_.size(); i++)
         {
             // Check if someone's ready to read
             if (pfds_[i].revents & POLLIN)
@@ -154,28 +156,17 @@ void PollServer::handle_client(int i)
 
 void PollServer::add_to_pfds(int newfd)
 {
-    // If we don't have room, add more space in the pfds array
-    pollfd *new_pfds = (pollfd *)realloc(pfds_, sizeof(*pfds_) * fd_size_);
-    if (new_pfds == NULL)
-    {
-        free(pfds_); // free memory allocated for pfds_ before it was nulled
-        pfds_ = NULL;
-        return;
-    }
-    pfds_ = new_pfds;
+    pollfd new_pfd;
 
-    pfds_[fd_count_].fd = newfd;
-    pfds_[fd_count_].events = POLLIN; // Check ready-to-read
+    new_pfd.fd = newfd;
+    new_pfd.events = POLLIN; 
 
-    (fd_count_)++;
+    pfds_.push_back(new_pfd);
 }
 
 void PollServer::del_from_pfds(int i)
 {
-    // Copy the one from the end over this one
-    pfds_[i] = pfds_[fd_count_ - 1];
-
-    fd_count_--;
+    pfds_.erase(pfds_.begin() + i);
 }
 
 // Get sockaddr, IPv4 or IPv6:
