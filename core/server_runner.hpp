@@ -1,3 +1,6 @@
+#ifndef SERVER_RUNNER_H
+#define SERVER_RUNNER_H
+
 #include "request_parser.hpp"
 
 namespace ServerRunnerTypes {
@@ -22,3 +25,5 @@ class ServerRunner {
         stop_.store(true);
     }
 };
+
+#endif

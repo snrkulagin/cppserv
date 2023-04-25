@@ -1,3 +1,6 @@
+#ifndef ROUTER_H
+#define ROUTER_H
+
 #include <unordered_map>
 #include "route_handler.hpp"
 
@@ -12,3 +15,5 @@ class Router {
     // If not found, send 404
     BaseRouteHandler& findRoute(RoutePath path);
 };
+
+#endif

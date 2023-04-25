@@ -12,9 +12,9 @@
 
 #include "poll_server.hpp"
 
-PollServer::PollServer(const std::string &port, Router *router) : ServerRunner(), port_(port)
+PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) : ServerRunner(), port_(port)
 {
-    router_.reset(router);
+    router_ = router;
 
     // Get us a socket and bind it
     struct addrinfo hints, *ai, *p;

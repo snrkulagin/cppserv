@@ -1,3 +1,6 @@
+#ifndef ROUTE_HANDLER_H
+#define ROUTE_HANDLER_H
+
 #include <string>
 
 using RoutePath = std::string;
@@ -38,3 +41,4 @@ class BaseRouteHandler {
         sendNotFound();
     };
 };
+#endif

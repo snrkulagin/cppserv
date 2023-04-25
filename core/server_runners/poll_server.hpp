@@ -9,7 +9,7 @@
 
 class PollServer : public ServerRunner {
 public:
-    PollServer(const std::string &port, Router* router);
+    PollServer(const std::string &port, std::shared_ptr<Router> router);
     ~PollServer();
 
     void run();
@@ -26,7 +26,7 @@ private:
 
     static const int INITIAL_PFD_SIZE = 5;
 
-    std::unique_ptr<Router> router_;
+    std::shared_ptr<Router> router_;
     
     HttpRequestParser parser_;
     const std::string port_;

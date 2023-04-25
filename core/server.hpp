@@ -23,12 +23,15 @@
  *
  */
 
+#ifndef SERVER_H
+#define SERVER_H
+
 #include "router.hpp"
 #include "server_runner.hpp"
 
 struct Config
 {
-    Router* router;
+    std::shared_ptr<Router> router;
     ServerRunnerTypes::ServerRunnerType server_runner_type;
     int port;
 };
@@ -37,7 +40,7 @@ class Server
 {
 private:
     int port_;
-    std::unique_ptr<Router> router_;
+    std::shared_ptr<Router> router_;
     std::unique_ptr<ServerRunner> server_runner_;
 
 public:
@@ -46,3 +49,4 @@ public:
     void start();
     void stop();
 };
+#endif
