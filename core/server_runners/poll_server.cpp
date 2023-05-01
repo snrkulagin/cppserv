@@ -9,8 +9,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <poll.h>
+#include <iostream>
+#include <memory>
 
 #include "poll_server.hpp"
+#include "http_response.hpp"
 
 PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) : ServerRunner(), port_(port)
 {
@@ -55,7 +58,8 @@ PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) 
     // If we got here, it means we didn't get bound
     if (p == NULL)
     {
-        fprintf(stderr, "PollServer: failed to bind\n");
+        std::cerr << "PollServer: failed to bind" << std::endl;
+        std::cerr << "Reason: " << std::strerror(errno) << std::endl;
         exit(1);
     }
 
@@ -148,10 +152,28 @@ void PollServer::accept_new_connection()
 
 void PollServer::handle_client(int i)
 {
-    std::string request_str = receive_http_request(pfds_[i].fd);
+    int client_socket = pfds_[i].fd;
+    std::string request_str = receive_http_request(client_socket);
+
+    // Connection closed
+    if (request_str.size() == 0) return;
+
     parser_.parse(request_str.c_str(), request_str.size());
 
     HttpRequest request = parser_.getRequest();
+    std::unique_ptr<Sender> sender = std::make_unique<Sender>(client_socket);
+
+    // @todo: handle exceptions
+    auto path = request.getPath();
+    BaseRouteHandler handler;
+
+    auto err = router_->findRoute(path, handler);
+
+    handler.injectSender(sender);
+    handler.Handle(request);
+
+    close(pfds_[i].fd);
+    del_from_pfds(i);
 }
 
 void PollServer::add_to_pfds(int newfd)
@@ -198,11 +220,34 @@ std::string PollServer::receive_http_request(int sockfd)
         int bytes_received = recv(sockfd, buffer, BUFFER_SIZE, 0);
         if (bytes_received < 0)
         {
+            close(sockfd);
+            auto iter = std::find_if(
+                pfds_.begin(), 
+                pfds_.end(), 
+                [&]
+                (const pollfd& p) -> bool { return p.fd == sockfd; });
+
+            if (iter != pfds_.end())
+                del_from_pfds(iter - pfds_.begin());
+
+            std::cout << "Closing connection" << std::endl;
+
             // Handle error.
             return "";
         }
         else if (bytes_received == 0)
         {
+            close(sockfd);
+            auto iter = std::find_if(
+                pfds_.begin(), 
+                pfds_.end(), 
+                [&]
+                (const pollfd& p) -> bool { return p.fd == sockfd; });
+
+            if (iter != pfds_.end())
+                del_from_pfds(iter - pfds_.begin());
+
+            std::cout << "Closing connection" << std::endl;
             // Connection closed by peer.
             return "";
         }

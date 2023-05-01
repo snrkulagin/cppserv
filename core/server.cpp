@@ -19,3 +19,7 @@ void Server::start()
 void Server::stop() {
     server_runner_->stop();
 }
+
+Server::~Server() {
+    stop();
+}

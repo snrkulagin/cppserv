@@ -17,17 +17,20 @@ private:
     static int on_url(llhttp_t* parser, const char* at, size_t length);
     static int on_header_field(llhttp_t* parser, const char* at, size_t length);
     static int on_header_value(llhttp_t* parser, const char* at, size_t length);
+    static int on_version_complete(llhttp_t* parser);
+    static int on_method_complete(llhttp_t* parser);
 
     std::string current_header_field_;
 
     llhttp_t parser_;
+    llhttp_settings_t settings_;  
 
     std::string method_;
     std::string path_;
 
+    std::string version_;
     int version_major_;
     int version_minor_;
-
     std::string user_agent_;
     std::string cookie_;
 

@@ -45,6 +45,7 @@ private:
 
 public:
     Server(Config config);
+    ~Server();
 
     void start();
     void stop();
