@@ -165,12 +165,11 @@ void PollServer::handle_client(int i)
 
     // @todo: handle exceptions
     auto path = request.getPath();
-    BaseRouteHandler handler;
 
-    auto err = router_->findRoute(path, handler);
+    auto handler = router_->findRoute(path.c_str());
 
-    handler.injectSender(sender);
-    handler.Handle(request);
+    handler->injectSender(sender);
+    handler->Handle(request);
 
     close(pfds_[i].fd);
     del_from_pfds(i);

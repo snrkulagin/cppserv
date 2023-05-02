@@ -38,6 +38,13 @@ public:
         return *this;
     }
 
+    HttpResponse& setHtmlData(const std::string& html_data) {
+        response_data_ = html_data;
+        setHeader("Content-Type", "text/html");
+        setHeader("Content-Length", std::to_string(response_data_.size()));
+        return *this;
+    }
+
     std::string toString() const {
         std::ostringstream oss;
         oss << "HTTP/1.1 " << status_code_ << " " << status_text_ << "\r\n";

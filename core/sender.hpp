@@ -8,6 +8,7 @@ public:
     }
     void sendResponse(HttpResponse& response) {
         auto response_string = response.toString();
+        // @todo: handle errors from send_all
         int bytes_sent = send_all(socket_fd, response_string.c_str(), response_string.size(), 0);
     }
 private:

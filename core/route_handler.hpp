@@ -14,11 +14,9 @@ enum ReturnCodes {
 
 class BaseRouteHandler {
     private:
-
     RoutePath path;
 
     protected:
-
     void sendNotFound() {
         HttpResponse resp;
         resp.setStatusCode(404);
@@ -27,7 +25,6 @@ class BaseRouteHandler {
     }
 
     public:
-
     std::function<void(HttpResponse&)> sendResponse;
 
     void injectSender(std::unique_ptr<Sender>& sender) {
@@ -37,6 +34,8 @@ class BaseRouteHandler {
     virtual ~BaseRouteHandler() {}
 
     virtual void Handle(HttpRequest& req) {
+        path = req.getPath();
+
         if (req.getMethod() == "GET") {
             Get(req);
         } else if (req.getMethod() == "POST") {
