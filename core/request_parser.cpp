@@ -1,4 +1,5 @@
 #include "request_parser.hpp"
+#include <iostream>
 
 HttpRequestParser::HttpRequestParser()
 {
@@ -18,6 +19,7 @@ HttpRequestParser::HttpRequestParser()
 size_t HttpRequestParser::parse(const char *data, size_t len)
 {
     enum llhttp_errno err = llhttp_execute(&parser_, data, len);
+    
     if (err == HPE_OK)
     {
         /* Successfully parsed! */
@@ -32,35 +34,65 @@ size_t HttpRequestParser::parse(const char *data, size_t len)
 
 int HttpRequestParser::on_url(llhttp_t *parser, const char *at, size_t length)
 {
-    HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
-    p->path_ = std::string(at, length);
+    try
+    {
+        if (at == nullptr) {
+            return 1;
+        }
+
+        HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
+        p->path_ = std::string(at, length);
+    }
+    catch (std::exception &err)
+    {
+        std::cerr << err.what() << std::endl;
+    }
+
     return 0;
 }
 
 int HttpRequestParser::on_header_field(llhttp_t *parser, const char *at, size_t length)
 {
-    HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
+    try
+    {
+        if (at == nullptr) {
+            return 1;
+        }
 
-    p->current_header_field_ = std::string(at, length);
-
+        HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
+        p->current_header_field_ = std::string(at, length);
+    }
+    catch (std::exception &err)
+    {
+        std::cerr << err.what() << std::endl;
+    }
     return 0;
 }
 
 int HttpRequestParser::on_version_complete(llhttp_t *parser)
 {
-    HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
-    p->version_major_ = parser->http_major;
-    p->version_minor_ = parser->http_minor;
-
+    try
+    {
+        HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
+        p->version_major_ = parser->http_major;
+        p->version_minor_ = parser->http_minor;
+    }
+    catch (std::exception &err)
+    {
+        std::cerr << err.what() << std::endl;
+    }
     return 0;
 }
 
 int HttpRequestParser::on_method_complete(llhttp_t *parser)
 {
-    HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
-    llhttp_method_t method = static_cast<llhttp_method_t>(parser->method);
+    try
+    {
+        HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
+        llhttp_method_t method = static_cast<llhttp_method_t>(parser->method);
 
-    switch (method) {
+        switch (method)
+        {
         // @todo: Change method names to const strings instead of literals
         case HTTP_DELETE:
             p->method_ = "DELETE";
@@ -80,43 +112,57 @@ int HttpRequestParser::on_method_complete(llhttp_t *parser)
         default:
             p->method_ = "Unknown";
             break;
+        }
     }
-
+    catch (std::exception &err)
+    {
+        std::cerr << err.what() << std::endl;
+    }
     return 0;
 }
 
 int HttpRequestParser::on_header_value(llhttp_t *parser, const char *at, size_t length)
 {
-    HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
-
-    if (p->current_header_field_ == "User-Agent")
+    try
     {
-        p->user_agent_ = std::string(at, length);
+        if (at == nullptr) {
+            return 1;
+        }
+        HttpRequestParser *p = static_cast<HttpRequestParser *>(parser->data);
+
+        if (p->current_header_field_ == "User-Agent")
+        {
+            p->user_agent_ = std::string(at, length);
+        }
+
+        if (p->current_header_field_ == "Cookie")
+        {
+            p->cookie_ = std::string(at, length);
+        }
+
+        if (p->current_header_field_ == "Accept-Encoding")
+        {
+            p->acceptEncoding_ = std::string(at, length);
+        }
+
+        if (p->current_header_field_ == "Connection")
+        {
+            p->connection_ = std::string(at, length);
+        }
+
+        if (p->current_header_field_ == "Content-Type")
+        {
+            p->contentType_ = std::string(at, length);
+        }
+
+        if (p->current_header_field_ == "Content-Length")
+        {
+            p->contentLength_ = std::string(at, length);
+        }
     }
-
-    if (p->current_header_field_ == "Cookie")
+    catch (std::exception &err)
     {
-        p->cookie_ = std::string(at, length);
-    }
-
-    if (p->current_header_field_ == "Accept-Encoding")
-    {
-        p->acceptEncoding_ = std::string(at, length);
-    }
-
-    if (p->current_header_field_ == "Connection")
-    {
-        p->connection_ = std::string(at, length);
-    }
-
-    if (p->current_header_field_ == "Content-Type")
-    {
-        p->contentType_ = std::string(at, length);
-    }
-
-    if (p->current_header_field_ == "Content-Length")
-    {
-        p->contentLength_ = std::string(at, length);
+        std::cerr << err.what() << std::endl;
     }
     return 0;
 }

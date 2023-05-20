@@ -34,6 +34,7 @@ struct Config
     std::shared_ptr<Router> router;
     ServerRunnerTypes::ServerRunnerType server_runner_type;
     int port;
+    int threadCounter = 8;
 };
 
 class Server

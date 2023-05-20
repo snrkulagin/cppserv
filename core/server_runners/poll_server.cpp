@@ -66,56 +66,83 @@ PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) 
     freeaddrinfo(ai); // All done with this
 
     // Listen
-    if (listen(listener_, 10) == -1)
+    if (listen(listener_, 128) == -1)
     {
         fprintf(stderr, "PollServer: listen error\n");
         exit(1);
     }
 
-    // Add the listener to set
-    pfds_.reserve(INITIAL_PFD_SIZE);
+    accepter_thread_ref_ = std::thread(&PollServer::accepter_thread, this);
+}
 
-    pollfd pfd;
-    pfd.fd = listener_;
-    pfd.events = POLLIN;
+void PollServer::accepter_thread()
+{
+    while (!stop_)
+    {
+        accept_new_connection();
+    }
+}
 
-    pfds_.push_back(pfd);
+PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router, int max_thread_counter) : PollServer(port, router)
+{
+    max_threads_ = max_thread_counter;
 }
 
 PollServer::~PollServer()
 {
+    stop_ = true;
+    if (accepter_thread_ref_.joinable())
+        accepter_thread_ref_.join();
+
     pfds_.clear();
 }
 
 void PollServer::run()
 {
+    auto pool = std::make_unique<thread_pool>(max_threads_);
+    // Remove this while loop altogether. Use 'select' system call inside
+    // 'handle_client' function to wait until the socket becomes readable.
+    // Call 'handle_client' from 'accept_new_connection'
     while (!stop_)
     {
-        int poll_count = poll(pfds_.data(), pfds_.size(), -1);
+        std::unique_lock<std::shared_mutex> lock(pfds_lock_);
 
+        int size = pfds_.size();
+
+        std::unique_ptr<pollfd[]> pfds_copy(new pollfd[size + 1]);
+        std::copy(pfds_.begin(), pfds_.end(), pfds_copy.get());
+
+        pfds_.clear();
+
+        lock.unlock();
+
+        pollfd pfd;
+        pfd.fd = listener_;
+        pfd.events = POLLIN;
+        pfds_copy[size] = pfd;
+
+        int poll_count = poll(pfds_copy.get(), size + 1, 500);
         if (poll_count == -1)
         {
             perror("PollServer: poll error");
             exit(1);
         }
 
-        // Run through the existing connections looking for data to read
-        for (int i = 0; i < pfds_.size(); i++)
+        int i = 0;
+        while (i < size)
         {
+            auto top = pfds_copy[i];
             // Check if someone's ready to read
-            if (pfds_[i].revents & POLLIN)
+            if (top.revents & POLLIN)
             {
-                if (pfds_[i].fd == listener_)
-                {
-                    // If listener is ready to read, handle new connection
-                    accept_new_connection();
-                }
-                else
-                {
-                    // If not the listener, we're just a regular client...
-                    handle_client(i);
-                }
+                // If not the listener, we're just a regular client...
+                pool->enqueue(&PollServer::handle_client, this, top.fd);
+            } else {
+                lock.lock();
+                pfds_.push_front(top);
+                lock.unlock();
             }
+            i++;
         }
     }
 }
@@ -126,7 +153,7 @@ void PollServer::accept_new_connection()
     struct sockaddr_storage remoteaddr;
     socklen_t addrlen;
     char remoteIP[INET6_ADDRSTRLEN];
-
+    
     // If listener is ready to read, handle new connection
     addrlen = sizeof remoteaddr;
     newfd = accept(listener_,
@@ -150,13 +177,17 @@ void PollServer::accept_new_connection()
     }
 }
 
-void PollServer::handle_client(int i)
+void PollServer::handle_client(int fd)
 {
-    int client_socket = pfds_[i].fd;
+    int client_socket = fd;
     std::string request_str = receive_http_request(client_socket);
 
     // Connection closed
-    if (request_str.size() == 0) return;
+    if (request_str.size() == 0)
+    {
+        close(fd);
+        return;
+    };
 
     parser_.parse(request_str.c_str(), request_str.size());
 
@@ -171,8 +202,7 @@ void PollServer::handle_client(int i)
     handler->injectSender(sender);
     handler->Handle(request);
 
-    close(pfds_[i].fd);
-    del_from_pfds(i);
+    close(fd);
 }
 
 void PollServer::add_to_pfds(int newfd)
@@ -180,14 +210,10 @@ void PollServer::add_to_pfds(int newfd)
     pollfd new_pfd;
 
     new_pfd.fd = newfd;
-    new_pfd.events = POLLIN; 
+    new_pfd.events = POLLIN;
 
-    pfds_.push_back(new_pfd);
-}
-
-void PollServer::del_from_pfds(int i)
-{
-    pfds_.erase(pfds_.begin() + i);
+    std::unique_lock<std::shared_mutex> lock(pfds_lock_);
+    pfds_.push_front(new_pfd);
 }
 
 // Get sockaddr, IPv4 or IPv6:
@@ -201,6 +227,7 @@ void *PollServer::get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6 *)sa)->sin6_addr);
 }
 
+
 // Wrapper function for recv() that receives an HTTP request
 // message from a socket and returns the message as a string.
 std::string PollServer::receive_http_request(int sockfd)
@@ -208,7 +235,7 @@ std::string PollServer::receive_http_request(int sockfd)
     // Initialize a buffer to receive the data.
     const int BUFFER_SIZE = 1024;
     char buffer[BUFFER_SIZE];
-
+    
     // Initialize a string to hold the received data.
     std::string request_message;
 
@@ -219,35 +246,10 @@ std::string PollServer::receive_http_request(int sockfd)
         int bytes_received = recv(sockfd, buffer, BUFFER_SIZE, 0);
         if (bytes_received < 0)
         {
-            close(sockfd);
-            auto iter = std::find_if(
-                pfds_.begin(), 
-                pfds_.end(), 
-                [&]
-                (const pollfd& p) -> bool { return p.fd == sockfd; });
-
-            if (iter != pfds_.end())
-                del_from_pfds(iter - pfds_.begin());
-
-            std::cout << "Closing connection" << std::endl;
-
-            // Handle error.
             return "";
         }
         else if (bytes_received == 0)
         {
-            close(sockfd);
-            auto iter = std::find_if(
-                pfds_.begin(), 
-                pfds_.end(), 
-                [&]
-                (const pollfd& p) -> bool { return p.fd == sockfd; });
-
-            if (iter != pfds_.end())
-                del_from_pfds(iter - pfds_.begin());
-
-            std::cout << "Closing connection" << std::endl;
-            // Connection closed by peer.
             return "";
         }
 
@@ -256,6 +258,7 @@ std::string PollServer::receive_http_request(int sockfd)
 
         // Check if we have received the entire message.
         std::string::size_type pos = request_message.find("\r\n\r\n");
+
         if (pos != std::string::npos)
         {
             // Found the end of the headers.
