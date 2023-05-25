@@ -23,16 +23,6 @@ Features have to include:
 
 The generated folder called 'include' should be copied to your project and included via target_include_directories.
 
-## Building
-    # cd to the source folder
-    mkdir build
-    cmake ..
-    make
-    sudo make install
-
-
-The generated folder called 'include' should be copied to your project and included via target_include_directories.
-
 ## Integration
 
     cmake_minimum_required(VERSION 3.12)
