@@ -7,7 +7,9 @@
 
 class HttpResponse {
 public:
-    HttpResponse() : status_code_(200), status_text_("OK") {}
+    HttpResponse() : status_code_(200), status_text_("OK") {
+        setHeader("Connection", "close");
+    }
 
     HttpResponse& setHeader(const std::string& name, const std::string& value) {
         headers_[name] = value;

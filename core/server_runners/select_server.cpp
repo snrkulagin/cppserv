@@ -11,11 +11,12 @@
 #include <poll.h>
 #include <iostream>
 #include <memory>
+#include <chrono>
 
-#include "poll_server.hpp"
+#include "select_server.hpp"
 #include "http_response.hpp"
 
-PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) : ServerRunner(), port_(port)
+SelectServer::SelectServer(const std::string &port, std::shared_ptr<Router> router) : ServerRunner(), port_(port)
 {
     router_ = router;
 
@@ -29,7 +30,7 @@ PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) 
     hints.ai_flags = AI_PASSIVE;
     if ((rv = getaddrinfo(NULL, port.c_str(), &hints, &ai)) != 0)
     {
-        fprintf(stderr, "PollServer: %s\n", gai_strerror(rv));
+        fprintf(stderr, "SelectServer: %s\n", gai_strerror(rv));
         exit(1);
     }
 
@@ -58,7 +59,7 @@ PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) 
     // If we got here, it means we didn't get bound
     if (p == NULL)
     {
-        std::cerr << "PollServer: failed to bind" << std::endl;
+        std::cerr << "SelectServer: failed to bind" << std::endl;
         std::cerr << "Reason: " << std::strerror(errno) << std::endl;
         exit(1);
     }
@@ -68,14 +69,13 @@ PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router) 
     // Listen
     if (listen(listener_, 128) == -1)
     {
-        fprintf(stderr, "PollServer: listen error\n");
+        fprintf(stderr, "SelectServer: listen error\n");
         exit(1);
     }
 
-    accepter_thread_ref_ = std::thread(&PollServer::accepter_thread, this);
 }
 
-void PollServer::accepter_thread()
+void SelectServer::accepter_thread()
 {
     while (!stop_)
     {
@@ -83,71 +83,31 @@ void PollServer::accepter_thread()
     }
 }
 
-PollServer::PollServer(const std::string &port, std::shared_ptr<Router> router, int max_thread_counter) : PollServer(port, router)
+SelectServer::SelectServer(const std::string &port, std::shared_ptr<Router> router, int max_thread_counter) : SelectServer(port, router)
 {
     max_threads_ = max_thread_counter;
 }
 
-PollServer::~PollServer()
+SelectServer::~SelectServer()
 {
     stop_ = true;
     if (accepter_thread_ref_.joinable())
         accepter_thread_ref_.join();
-
-    pfds_.clear();
 }
 
-void PollServer::run()
+void SelectServer::run()
 {
-    auto pool = std::make_unique<thread_pool>(max_threads_);
-    // Remove this while loop altogether. Use 'select' system call inside
-    // 'handle_client' function to wait until the socket becomes readable.
-    // Call 'handle_client' from 'accept_new_connection'
-    while (!stop_)
-    {
-        std::unique_lock<std::shared_mutex> lock(pfds_lock_);
+    t_pool = std::make_unique<thread_pool>(max_threads_);
+    accepter_thread_ref_ = std::thread(&SelectServer::accepter_thread, this);
 
-        int size = pfds_.size();
+    using namespace std::chrono_literals;
 
-        std::unique_ptr<pollfd[]> pfds_copy(new pollfd[size + 1]);
-        std::copy(pfds_.begin(), pfds_.end(), pfds_copy.get());
-
-        pfds_.clear();
-
-        lock.unlock();
-
-        pollfd pfd;
-        pfd.fd = listener_;
-        pfd.events = POLLIN;
-        pfds_copy[size] = pfd;
-
-        int poll_count = poll(pfds_copy.get(), size + 1, 500);
-        if (poll_count == -1)
-        {
-            perror("PollServer: poll error");
-            exit(1);
-        }
-
-        int i = 0;
-        while (i < size)
-        {
-            auto top = pfds_copy[i];
-            // Check if someone's ready to read
-            if (top.revents & POLLIN)
-            {
-                // If not the listener, we're just a regular client...
-                pool->enqueue(&PollServer::handle_client, this, top.fd);
-            } else {
-                lock.lock();
-                pfds_.push_front(top);
-                lock.unlock();
-            }
-            i++;
-        }
+    while(!stop_) {
+        std::this_thread::sleep_for(1000ms);
     }
 }
 
-void PollServer::accept_new_connection()
+void SelectServer::accept_new_connection()
 {
     int newfd;
     struct sockaddr_storage remoteaddr;
@@ -166,9 +126,9 @@ void PollServer::accept_new_connection()
     }
     else
     {
-        add_to_pfds(newfd);
+        t_pool->enqueue(&SelectServer::handle_client, this, newfd);
 
-        printf("pollserver: new connection from %s on "
+        printf("SelectServer: new connection from %s on "
                "socket %d\n",
                inet_ntop(remoteaddr.ss_family,
                          get_in_addr((struct sockaddr *)&remoteaddr),
@@ -177,10 +137,35 @@ void PollServer::accept_new_connection()
     }
 }
 
-void PollServer::handle_client(int fd)
+bool SelectServer::wait_till_fd_ready(int fd) {
+    fd_set readSet;
+    FD_ZERO(&readSet);
+    FD_SET(fd, &readSet);
+
+    int ready = select(fd + 1, &readSet, nullptr, nullptr, nullptr);
+    if (ready == -1) {
+        std::cout << "error: Couldn't read from socket " << fd << std::endl;
+        return false;
+    } else {
+        if (FD_ISSET(fd, &readSet)) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+void SelectServer::handle_client(const int fd)
 {
-    int client_socket = fd;
-    std::string request_str = receive_http_request(client_socket);
+    std::cout << "Handling fd: " << fd << std::endl;
+    bool isOkay = wait_till_fd_ready(fd);
+
+    if (!isOkay) {
+        std::cerr << "error: Could not establish connection. Dropping..." << std::endl;
+        return;
+    }
+
+    std::string request_str = receive_http_request(fd);
 
     // Connection closed
     if (request_str.size() == 0)
@@ -192,32 +177,21 @@ void PollServer::handle_client(int fd)
     parser_.parse(request_str.c_str(), request_str.size());
 
     HttpRequest request = parser_.getRequest();
-    std::shared_ptr<Sender> sender = std::make_shared<Sender>(client_socket);
+    std::shared_ptr<Sender> sender = std::make_shared<Sender>(fd);
 
     // @todo: handle exceptions
     auto path = request.getPath();
-
     auto handler = router_->findRoute(path.c_str());
 
     handler->injectSender(sender);
     handler->Handle(request);
 
+    std::cout << "Closing fd " << fd << std::endl;
     close(fd);
 }
 
-void PollServer::add_to_pfds(int newfd)
-{
-    pollfd new_pfd;
-
-    new_pfd.fd = newfd;
-    new_pfd.events = POLLIN;
-
-    std::unique_lock<std::shared_mutex> lock(pfds_lock_);
-    pfds_.push_front(new_pfd);
-}
-
 // Get sockaddr, IPv4 or IPv6:
-void *PollServer::get_in_addr(struct sockaddr *sa)
+void *SelectServer::get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET)
     {
@@ -230,7 +204,7 @@ void *PollServer::get_in_addr(struct sockaddr *sa)
 
 // Wrapper function for recv() that receives an HTTP request
 // message from a socket and returns the message as a string.
-std::string PollServer::receive_http_request(int sockfd)
+std::string SelectServer::receive_http_request(int sockfd)
 {
     // Initialize a buffer to receive the data.
     const int BUFFER_SIZE = 1024;

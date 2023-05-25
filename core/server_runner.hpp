@@ -5,7 +5,8 @@
 
 namespace ServerRunnerTypes {
     enum ServerRunnerType {
-        POLL
+        POLL,
+        SELECT
     };
 }
 class ServerRunner {

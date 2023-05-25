@@ -25,10 +25,14 @@ class BaseRouteHandler {
     }
 
     public:
-    std::function<void(HttpResponse&)> sendResponse;
+    void sendResponse(HttpResponse& resp) {
+        sender->sendResponse(resp);
+    };
 
-    void injectSender(std::unique_ptr<Sender>& sender) {
-        sendResponse = std::bind(&Sender::sendResponse, sender.get(), std::placeholders::_1);;
+    std::shared_ptr<Sender> sender;
+
+    void injectSender(std::shared_ptr<Sender>& sender) {
+        this->sender = sender;
     };
 
     virtual ~BaseRouteHandler() {}
