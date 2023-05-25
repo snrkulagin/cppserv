@@ -1,2 +1,6 @@
 .vscode
 build
+.ds_store
+CMakeCache
+test
+include
